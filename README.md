@@ -376,6 +376,11 @@ The application will be accessible at `http://localhost:5000`.
 
 ## 🧪 Testing & Production Build
 
+To run the unit and integration test suite:
+```bash
+npm run test
+```
+
 To verify type safety across the entire Full-Stack codebase:
 ```bash
 npm run check
@@ -386,6 +391,22 @@ To compile the application for production deployment:
 npm run build
 ```
 This command bundles the React frontend via Vite, places the static assets in the `dist/public` folder, and compiles the Express backend to serve them.
+
+---
+
+## 🐳 Docker Deployment
+
+The repository includes a highly optimized, multi-stage `Dockerfile` running as a non-root user.
+
+1. Build the image:
+```bash
+docker build -t bharath-scheme-bot .
+```
+
+2. Run the container:
+```bash
+docker run -p 5000:5000 -e GEMINI_API_KEY=your_key_here bharath-scheme-bot
+```
 
 ---
 

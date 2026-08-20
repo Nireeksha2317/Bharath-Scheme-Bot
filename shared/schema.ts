@@ -63,6 +63,7 @@ export const schemes = sqliteTable("schemes", {
   categoryIdx: index("scheme_category_idx").on(t.category),
   stateIdx: index("scheme_state_idx").on(t.state),
   sourceIdx: index("scheme_source_idx").on(t.source),
+  statusIdx: index("scheme_status_idx").on(t.status),
 }));
 
 // --- ELIGIBILITY RULES (STRUCTURED) ---

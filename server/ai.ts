@@ -1,17 +1,18 @@
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
+import { logger } from './logger';
 
 let ai: GoogleGenAI | null = null;
 
 try {
   if (process.env.GEMINI_API_KEY) {
     ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    console.log("Gemini AI successfully initialized");
+    logger.info("Gemini AI successfully initialized");
   } else {
-    console.warn("GEMINI_API_KEY is not set. AI features will run in fallback mode.");
+    logger.warn("GEMINI_API_KEY is not set. AI features will run in fallback mode.");
   }
 } catch (e) {
-  console.warn("GoogleGenAI initialization failed:", e);
+  logger.warn("GoogleGenAI initialization failed", { error: e });
 }
 
 const intentResponseSchema = z.object({
@@ -22,6 +23,19 @@ const intentResponseSchema = z.object({
 });
 
 export type IntentResponse = z.infer<typeof intentResponseSchema>;
+
+// Helper function to enforce strict timeouts on promises
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  return Promise.race([ 
+    promise, 
+    timeoutPromise 
+  ]).finally(() => clearTimeout(timeoutHandle));
+}
 
 /**
  * Parses user input to extract semantic intent and parameters using Gemini.
@@ -56,7 +70,7 @@ User Message: "${message}"
 `;
 
   try {
-    const response = await ai.models.generateContent({
+    const aiCall = ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
@@ -64,12 +78,15 @@ User Message: "${message}"
       }
     });
 
+    // Enforce an 8000ms strict timeout for intent parsing
+    const response = await withTimeout(aiCall, 8000);
+
     if (response.text) {
       const parsed = JSON.parse(response.text);
       return intentResponseSchema.parse(parsed);
     }
   } catch (err) {
-    console.error("Gemini Intent Error:", err);
+    logger.error("Gemini Intent Error", { error: err instanceof Error ? err.message : err });
   }
   return fallbackIntent(message);
 }
@@ -86,7 +103,8 @@ export async function generateResponse(
     return { response: null, suggestedQuestions: [] };
   }
 
-  const schemesContext = schemes.slice(0, 5).map(s => 
+  // Cost Control: Pass only top 3 schemes to context to minimize token usage
+  const schemesContext = schemes.slice(0, 3).map(s => 
     `- ${s.name}: ${s.description} (Category: ${s.category}, Benefits: ${s.benefits})`
   ).join('\n');
 
@@ -111,7 +129,7 @@ Return ONLY a JSON object:
 `;
 
   try {
-    const response = await ai.models.generateContent({
+    const aiCall = ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
@@ -119,11 +137,14 @@ Return ONLY a JSON object:
       }
     });
     
+    // Enforce a 12000ms strict timeout for generation
+    const response = await withTimeout(aiCall, 12000);
+    
     if (response.text) {
       return JSON.parse(response.text) as { response: string, suggestedQuestions: string[] };
     }
   } catch (err) {
-    console.error("Gemini Generate Error:", err);
+    logger.error("Gemini Generate Error", { error: err instanceof Error ? err.message : err });
   }
   return { response: null, suggestedQuestions: [] };
 }

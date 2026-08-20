@@ -5,6 +5,9 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { InsertScheme } from "@shared/schema";
 import { extractIntentAndParams, generateResponse } from "./ai";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
+import { logger } from "./logger";
 
 // --- SEED DATA ---
 const SEED_SCHEMES: InsertScheme[] = [
@@ -879,6 +882,22 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // --- HEALTH & READINESS ENDPOINTS ---
+  app.get("/health", (req, res) => {
+    res.json({ status: "ok", version: "1.0.0" });
+  });
+
+  app.get("/ready", async (req, res) => {
+    try {
+      // Fast database ping without complex queries
+      await db.run(sql`SELECT 1`);
+      res.json({ status: "ok", database: "connected", ai: !!process.env.GEMINI_API_KEY });
+    } catch (error) {
+      logger.error("Readiness check failed:", { error });
+      res.status(503).json({ status: "error", database: "disconnected" });
+    }
+  });
+
   await storage.seedSchemes(SEED_SCHEMES);
 
   app.get(api.schemes.list.path, async (req, res) => {
@@ -897,6 +916,7 @@ export async function registerRoutes(
         }
       }
 
+      res.setHeader("Cache-Control", "public, max-age=300");
       res.json(schemes);
     } catch (err) {
       res.status(500).json({ message: "Failed to fetch schemes" });
@@ -1101,7 +1121,7 @@ export async function registerRoutes(
       });
 
     } catch (err) {
-      console.error("Chat Endpoint Error:", err);
+      logger.error("Chat Endpoint Error:", { error: err });
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
       }
@@ -1115,7 +1135,7 @@ export async function registerRoutes(
       const metrics = await storage.getMetrics();
       res.json(metrics);
     } catch (err) {
-      console.error(err);
+      logger.error("Failed to fetch metrics", { error: err });
       res.status(500).json({ message: "Failed to fetch metrics" });
     }
   });
