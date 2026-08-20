@@ -1,14 +1,29 @@
 
 
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
-
-
 const app = express();
 const httpServer = createServer(app);
+
+// Security Headers
+app.use(helmet({
+  contentSecurityPolicy: false, // Disabling CSP for now to prevent issues with Vite's dev server and inline scripts
+}));
+
+// API Rate Limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many requests from this IP, please try again after 15 minutes"
+});
+app.use("/api/", apiLimiter);
 
 declare module "http" {
   interface IncomingMessage {

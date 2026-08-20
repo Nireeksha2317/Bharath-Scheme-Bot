@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { InsertScheme } from "@shared/schema";
+import { extractIntentAndParams, generateResponse } from "./ai";
 
 // --- SEED DATA ---
 const SEED_SCHEMES: InsertScheme[] = [
@@ -873,98 +874,6 @@ const TRANSLATIONS: Record<string, any> = {
   }
 };
 
-function detectIntent(message: string): { intent: string, category?: string, source?: string, state?: string, keywords: string[] } {
-  const msg = message.toLowerCase();
-
-  // Greeting Patterns
-  if (msg.match(/\b(hi|hello|hey|greetings|namaste|ನಮಸ್ಕಾರ|ಹಲೋ|नमस्ते|प्रणाम)\b/)) {
-    return { intent: "greeting", keywords: [] };
-  }
-
-  const result: any = { intent: "unknown", keywords: [] };
-
-  // 1. State/Source Keywords
-  if (msg.match(/(karnataka|state|ka|ಕರ್ನಾಟಕ|ರಾಜ್ಯ|kannada|benagluru|कर्नाटक|राज्य)/)) {
-    result.state = "Karnataka";
-    result.intent = "scheme_query";
-  }
-  if (msg.match(/(central|india|center|ಕೇಂದ್ರ|ಭಾರತ|central|केंद्र|भारत|pm|modi)/)) {
-    result.source = "Central";
-    result.intent = "scheme_query";
-  }
-
-  // 2. Category Keywords Mapping
-  const mappings = [
-    {
-      keys: [
-        "farmer", "kisan", "agriculture", "crop", "soil", "harvest", "sinchayee", "irrigation",
-        "ರೈತ", "ಕೃಷಿ", "ಬೆಳೆ", "ಮಣ್ಣು", "ನೀರಾವರಿ", "ಕಿಸಾನ್",
-        "किसान", "कृषि", "फसल", "सिंचाई", "खेती"
-      ],
-      category: "Agriculture & Farmers"
-    },
-    {
-      keys: [
-        "student", "scholarship", "education", "college", "school", "university", "study", "vidyanidhi",
-        "ವಿದ್ಯಾರ್ಥಿ", "ವಿದ್ಯಾಭ್ಯಾಸ", "ಶಾಲೆ", "ಕಾಲೇಜು", "ಶಿಕ್ಷಣ", "ವಿದ್ಯಾನಿಧಿ",
-        "छात्र", "शिक्षा", "स्कूल", "कॉलेज", "छात्रवृत्ति", "विद्यार्थी"
-      ],
-      category: "Education & Students"
-    },
-    {
-      keys: [
-        "woman", "women", "girl", "female", "lady", "maternity", "widow", "sister", "mother", "shakti",
-        "ಮಹಿಳೆ", "ಹುಡುಗಿ", "ತಾಯಿ", "ವಿಧವೆ", "ಶಕ್ತಿ", "ಗೃಹಲಕ್ಷ್ಮಿ",
-        "महिला", "लड़की", "स्त्री", "माता", "शक्ति", "नारी"
-      ],
-      category: "Women & Child Welfare"
-    },
-    {
-      keys: [
-        "job", "work", "employment", "skill", "career", "salary", "wage", "startup", "business", "vishwakarma",
-        "ಕೆಲಸ", "ಉದ್ಯೋಗ", "ಕೌಶಲ್ಯ", "ವ್ಯಾಪಾರ", "ಬಿಸಿನೆಸ್",
-        "नौकरी", "रोजगार", "काम", "कौशल", "व्यापार"
-      ],
-      category: "Employment & Skill Development"
-    },
-    {
-      keys: [
-        "health", "hospital", "medical", "doctor", "treatment", "medicine", "insurance", "ayushman", "mental",
-        "ಆರೋಗ್ಯ", "ಆಸ್ಪತ್ರೆ", "ಚಿಕಿತ್ಸೆ", "ಔಷಧ", "ವಿಮೆ", "ಆಯುಷ್ಮಾನ್",
-        "स्वास्थ्य", "अस्पताल", "इलाज", "दवा", "बीमा", "आयुष्मान"
-      ],
-      category: "Health & Insurance"
-    },
-    {
-      keys: [
-        "house", "housing", "home", "flat", "urban", "rural", "construction", "basava", "awas",
-        "ಮನೆ", "ವಸತಿ", "ಗೃಹ", "ಬಸವ", "ಆಶ್ರಯ",
-        "घर", "आवास", "मकान", "गृह", "शहरी", "ग्रामीण"
-      ],
-      category: "Housing & Urban"
-    },
-    {
-      keys: [
-        "senior", "pension", "old", "elder", "retired", "retirement", "atal",
-        "ಹಿರಿಯ", "ಪಿಂಚಣಿ", "ವೃದ್ಧ", "ನಿವೃತ್ತ",
-        "वरिष्ठ", "पेंशन", "बुजुर्ग", "सेवानिवृत्त"
-      ],
-      category: "Senior Citizens & Pension"
-    }
-  ];
-
-  for (const map of mappings) {
-    if (map.keys.some(k => msg.includes(k))) {
-      result.category = map.category;
-      result.intent = "scheme_query";
-      result.keywords = map.keys;
-      break;
-    }
-  }
-
-  return result;
-}
-
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -975,10 +884,136 @@ export async function registerRoutes(
   app.get(api.schemes.list.path, async (req, res) => {
     try {
       const input = api.schemes.list.input?.parse(req.query) || {};
-      const schemes = await storage.getAllSchemes(input.category, input.state, input.search, input.source);
+      let schemes = await storage.getAllSchemes(input.category, input.state, input.search, input.source);
+
+      if (input.deviceId) {
+        const user = await storage.getUserByDeviceId(input.deviceId);
+        if (user) {
+          const profile = await storage.getUserProfile(user.id);
+          if (profile) {
+            const { rankSchemes } = await import('./engine');
+            schemes = rankSchemes(schemes, profile, input.category, input.state) as any;
+          }
+        }
+      }
+
       res.json(schemes);
     } catch (err) {
       res.status(500).json({ message: "Failed to fetch schemes" });
+    }
+  });
+
+  app.post(api.profile.update.path, async (req, res) => {
+    try {
+      const { deviceId, profile } = api.profile.update.input.parse(req.body);
+      
+      let user = await storage.getUserByDeviceId(deviceId);
+      if (!user) {
+        user = await storage.createUser({ deviceId, role: "citizen" });
+      }
+
+      const updatedProfile = await storage.upsertUserProfile(user.id, profile);
+      res.json(updatedProfile);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Saved Schemes Routes
+  app.get(api.savedSchemes.list.path, async (req, res) => {
+    try {
+      const { deviceId } = req.query;
+      if (!deviceId || typeof deviceId !== 'string') {
+        return res.status(400).json({ message: "deviceId is required" });
+      }
+      const user = await storage.getUserByDeviceId(deviceId);
+      if (!user) return res.json([]);
+      const saved = await storage.getSavedSchemes(user.id);
+      res.json(saved);
+    } catch (err) {
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post(api.savedSchemes.create.path, async (req, res) => {
+    try {
+      const { deviceId, schemeId } = api.savedSchemes.create.input.parse(req.body);
+      let user = await storage.getUserByDeviceId(deviceId);
+      if (!user) {
+        user = await storage.createUser({ deviceId, role: "citizen" });
+      }
+      const saved = await storage.saveScheme({ userId: user.id, schemeId });
+      res.json(saved);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete(api.savedSchemes.remove.path, async (req, res) => {
+    try {
+      const { deviceId } = req.query;
+      if (!deviceId || typeof deviceId !== 'string') {
+        return res.status(400).json({ message: "deviceId is required" });
+      }
+      const user = await storage.getUserByDeviceId(deviceId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      await storage.removeSavedScheme(user.id, Number(req.params.schemeId));
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Applications Routes
+  app.get(api.applications.list.path, async (req, res) => {
+    try {
+      const { deviceId } = req.query;
+      if (!deviceId || typeof deviceId !== 'string') {
+        return res.status(400).json({ message: "deviceId is required" });
+      }
+      const user = await storage.getUserByDeviceId(deviceId);
+      if (!user) return res.json([]);
+      const apps = await storage.getApplications(user.id);
+      res.json(apps);
+    } catch (err) {
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post(api.applications.create.path, async (req, res) => {
+    try {
+      const { deviceId, schemeId } = api.applications.create.input.parse(req.body);
+      let user = await storage.getUserByDeviceId(deviceId);
+      if (!user) {
+        user = await storage.createUser({ deviceId, role: "citizen" });
+      }
+      const app = await storage.createApplication({ 
+        userId: user.id, 
+        schemeId,
+        status: "Interested" 
+      });
+      res.json(app);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch(api.applications.updateStatus.path, async (req, res) => {
+    try {
+      const { deviceId, status } = api.applications.updateStatus.input.parse(req.body);
+      const user = await storage.getUserByDeviceId(deviceId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      
+      const app = await storage.updateApplicationStatus(Number(req.params.id), status);
+      res.json(app);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
@@ -990,38 +1025,65 @@ export async function registerRoutes(
 
   app.post(api.chat.send.path, async (req, res) => {
     try {
-      const { message, language = "en" } = api.chat.send.input.parse(req.body); // Default to 'en'
-      const { intent, category, state, source } = detectIntent(message);
+      const { message, language = "en", deviceId } = api.chat.send.input.parse(req.body);
+      
+      // 1. Use Gemini to extract intent
+      const intentData = await extractIntentAndParams(message);
+      const { intent, category, state, source } = intentData;
 
-      // Select translation set
+      // Select translation set for fallback
       const t = TRANSLATIONS[language] || TRANSLATIONS["en"];
 
       let responseText = "";
-      let schemesResult = undefined;
+      let schemesResult: any[] | undefined = undefined;
       let suggestedQuestions: string[] = [];
 
       if (intent === "greeting") {
-        responseText = t.greeting;
-        suggestedQuestions = ["Karnataka student schemes", "Central farmer schemes", "Women welfare schemes"];
+        const aiResponse = await generateResponse(message, language, []);
+        responseText = aiResponse.response || t.greeting;
+        suggestedQuestions = aiResponse.suggestedQuestions.length > 0 ? aiResponse.suggestedQuestions : ["Karnataka student schemes", "Central farmer schemes", "Women welfare schemes"];
       } else if (intent === "scheme_query") {
-        schemesResult = await storage.getAllSchemes(category, state, undefined, source);
-        const count = schemesResult.length;
-
-        let desc = category || "government";
-        if (state) desc = `${state} ${desc}`;
-        if (source) desc = `${source} ${desc}`;
-
-        if (count > 0) {
-          responseText = t.found(count, desc);
-          if (count > 3) {
-            suggestedQuestions = ["Show all matched schemes"];
+        // 2. Query Database with AI-extracted params
+        schemesResult = await storage.getAllSchemes(category || undefined, state || undefined, undefined, source || undefined);
+        
+        // 3. Rank with profile context
+        if (deviceId) {
+          const user = await storage.getUserByDeviceId(deviceId);
+          if (user) {
+            const profile = await storage.getUserProfile(user.id);
+            if (profile) {
+              const { rankSchemes } = await import('./engine');
+              schemesResult = rankSchemes(schemesResult, profile, category || undefined, state || undefined) as any;
+            }
           }
+        }
+        
+        // 4. Synthesize Human-Readable Response using Gemini
+        const count = schemesResult?.length || 0;
+        const aiResponse = await generateResponse(message, language, schemesResult || []);
+
+        if (aiResponse.response) {
+          responseText = aiResponse.response;
+          suggestedQuestions = aiResponse.suggestedQuestions;
         } else {
-          responseText = t.notFound(desc);
+          // Fallback logic
+          let desc = category || "government";
+          if (state) desc = `${state} ${desc}`;
+          if (source) desc = `${source} ${desc}`;
+
+          if (count > 0) {
+            responseText = t.found(count, desc);
+            if (count > 3) {
+              suggestedQuestions = ["Show all matched schemes"];
+            }
+          } else {
+            responseText = t.notFound(desc);
+          }
         }
       } else {
-        responseText = t.unknown;
-        suggestedQuestions = ["Karnataka schemes", "PM Kisan scheme", "Scholarships"];
+        const aiResponse = await generateResponse(message, language, []);
+        responseText = aiResponse.response || t.unknown;
+        suggestedQuestions = aiResponse.suggestedQuestions.length > 0 ? aiResponse.suggestedQuestions : ["Karnataka schemes", "PM Kisan scheme", "Scholarships"];
       }
 
       await storage.logChat({
@@ -1039,10 +1101,22 @@ export async function registerRoutes(
       });
 
     } catch (err) {
+      console.error("Chat Endpoint Error:", err);
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
       }
       res.status(500).json({ message: "Internal Server Error" });
+    }
+  });
+
+  // --- ADMIN METRICS ---
+  app.get("/api/admin/metrics", async (req, res) => {
+    try {
+      const metrics = await storage.getMetrics();
+      res.json(metrics);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Failed to fetch metrics" });
     }
   });
 

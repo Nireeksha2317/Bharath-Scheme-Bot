@@ -10,8 +10,19 @@ import {
   Briefcase, 
   Users,
   Building2,
-  FileText
+  FileText,
+  Download,
+  Bookmark,
+  BookmarkCheck
 } from "lucide-react";
+import { generateSchemePDF } from "@/lib/export-pdf";
+import { 
+  useSavedSchemes, 
+  useSaveScheme, 
+  useRemoveSavedScheme, 
+  useCreateApplication,
+  useApplications
+} from "@/hooks/use-dashboard";
 
 interface SchemeCardProps {
   scheme: Scheme;
@@ -19,6 +30,31 @@ interface SchemeCardProps {
 
 export function SchemeCard({ scheme }: SchemeCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const { data: savedSchemes } = useSavedSchemes();
+  const { data: applications } = useApplications();
+  const { mutate: saveScheme, isPending: saving } = useSaveScheme();
+  const { mutate: removeSavedScheme, isPending: removing } = useRemoveSavedScheme();
+  const { mutate: createApplication, isPending: applying } = useCreateApplication();
+
+  const isSaved = savedSchemes?.some(s => s.scheme.id === scheme.id);
+  const isApplied = applications?.some(a => a.scheme.id === scheme.id);
+
+  const toggleSave = () => {
+    if (isSaved) {
+      removeSavedScheme(scheme.id);
+    } else {
+      saveScheme(scheme.id);
+    }
+  };
+
+  const handleApply = () => {
+    if (!isApplied) {
+      createApplication(scheme.id);
+    }
+    if (scheme.officialLink) {
+      window.open(scheme.officialLink, '_blank');
+    }
+  };
 
   const getIcon = (category: string) => {
     const c = category.toLowerCase();
@@ -67,16 +103,38 @@ export function SchemeCard({ scheme }: SchemeCardProps) {
           <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
         </button>
         
-        {scheme.officialLink && (
-          <a 
-            href={scheme.officialLink}
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg shadow-sm hover:bg-primary/90 transition-all hover:scale-[1.02] active:scale-[0.98]"
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={toggleSave}
+            disabled={saving || removing}
+            className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
+              isSaved ? 'text-primary bg-primary/10 hover:bg-primary/20' : 'text-muted-foreground hover:bg-gray-200'
+            }`}
+            title={isSaved ? "Remove Bookmark" : "Bookmark Scheme"}
           >
-            Apply Now <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
+            {isSaved ? <BookmarkCheck className="w-5 h-5" /> : <Bookmark className="w-5 h-5" />}
+          </button>
+          
+          <button 
+            onClick={() => generateSchemePDF(scheme)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-secondary-foreground text-sm font-semibold rounded-lg shadow-sm hover:bg-secondary/80 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            title="Download Scheme Details as PDF"
+          >
+            <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Save PDF</span>
+          </button>
+          
+          <button 
+            onClick={handleApply}
+            disabled={applying}
+            className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold rounded-lg shadow-sm transition-all ${
+              isApplied 
+                ? 'bg-green-100 text-green-800 cursor-default' 
+                : 'bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]'
+            }`}
+          >
+            {isApplied ? "Applied" : "Apply Now"} {!isApplied && <ExternalLink className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
 
       {/* Expanded Content */}

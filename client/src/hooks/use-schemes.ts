@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type ChatResponse, type Scheme } from "@shared/routes";
 import { z } from "zod";
+import { getDeviceId } from "./use-profile";
 
 // ============================================
 // Schemes Hooks
@@ -13,13 +14,16 @@ export function useSchemes(params?: { category?: string; state?: string; search?
     queryKey,
     queryFn: async () => {
       let url = api.schemes.list.path;
+      const deviceId = getDeviceId();
+      const queryParams = new URLSearchParams();
+      queryParams.set("deviceId", deviceId);
+
       if (params) {
-        const queryParams = new URLSearchParams();
         if (params.category) queryParams.set("category", params.category);
         if (params.state) queryParams.set("state", params.state);
         if (params.search) queryParams.set("search", params.search);
-        url += `?${queryParams.toString()}`;
       }
+      url += `?${queryParams.toString()}`;
       
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch schemes");
@@ -52,8 +56,9 @@ export function useChat() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (data: SendChatParams) => {
-      const validated = api.chat.send.input.parse(data);
+    mutationFn: async (data: Omit<SendChatParams, "deviceId">) => {
+      const payload: SendChatParams = { ...data, deviceId: getDeviceId() };
+      const validated = api.chat.send.input.parse(payload);
       const res = await fetch(api.chat.send.path, {
         method: api.chat.send.method,
         headers: { 'Content-Type': 'application/json' },

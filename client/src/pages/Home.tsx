@@ -1,12 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useChat } from "@/hooks/use-schemes";
+import { useSpeech } from "@/hooks/use-speech";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { Navigation } from "@/components/Navigation";
 import { SchemeCard } from "@/components/SchemeCard";
 import { type Scheme } from "@shared/routes";
-import { Send, Bot, User, Sparkles, Loader2, BadgeIndianRupee } from "lucide-react";
+import { Send, Bot, User, Sparkles, Loader2, BadgeIndianRupee, Mic, Volume2, VolumeX, UserCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { EligibilityWizard } from "@/components/EligibilityWizard";
+import { useProfile } from "@/hooks/use-profile";
 
 interface Message {
   id: string;
@@ -29,8 +33,11 @@ export default function Home() {
   const [language, setLanguage] = useState("en");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { mutate: sendMessage, isPending } = useChat();
+  const { isListening, listen, speak, voiceEnabled, setVoiceEnabled } = useSpeech(language);
+  const { profile } = useProfile();
 
   const labels = UI_LABELS[language] || UI_LABELS["en"];
 
@@ -70,6 +77,7 @@ export default function Home() {
             timestamp: new Date(),
           };
           setMessages(prev => [...prev, botMsg]);
+          speak(data.response);
         },
         onError: () => {
           const errorMsg: Message = {
@@ -114,10 +122,34 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
+              <DialogTrigger asChild>
+                <button
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors font-medium text-sm"
+                  title="Update Profile for Better Recommendations"
+                >
+                  <UserCircle className="w-5 h-5" />
+                  <span className="hidden md:inline">
+                    {profile?.age ? "My Profile" : "Set Profile"}
+                  </span>
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl p-0 bg-transparent border-none shadow-none">
+                <EligibilityWizard onComplete={() => setIsProfileOpen(false)} />
+              </DialogContent>
+            </Dialog>
+
             <div className="hidden md:block">
               <Navigation />
             </div>
             <div className="h-6 w-px bg-border mx-2 hidden md:block" />
+            <button
+              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+              title={voiceEnabled ? "Disable Voice Output" : "Enable Voice Output"}
+            >
+              {voiceEnabled ? <Volume2 className="w-5 h-5 text-primary" /> : <VolumeX className="w-5 h-5 text-muted-foreground" />}
+            </button>
             <LanguageSelector currentLang={language} onLanguageChange={setLanguage} />
           </div>
         </div>
@@ -185,12 +217,21 @@ export default function Home() {
                     msg.role === "user" ? "items-end flex flex-col" : "items-start"
                   )}>
                     <div className={clsx(
-                      "px-5 py-3.5 rounded-2xl text-base leading-relaxed shadow-sm",
+                      "px-5 py-3.5 rounded-2xl text-base leading-relaxed shadow-sm relative group",
                       msg.role === "user" 
                         ? "bg-primary text-primary-foreground rounded-tr-none" 
                         : "bg-white border border-border text-foreground rounded-tl-none"
                     )}>
                       {msg.content}
+                      {msg.role === "bot" && (
+                        <button 
+                          onClick={() => speak(msg.content)} 
+                          className="absolute -right-8 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:bg-white hover:shadow-sm hover:text-primary opacity-0 group-hover:opacity-100 transition-all focus:opacity-100" 
+                          title="Read Aloud"
+                        >
+                          <Volume2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
 
                     {/* Schemes Display */}
@@ -255,6 +296,24 @@ export default function Home() {
               disabled={isPending}
               className="flex-1 bg-gray-50 border border-border/80 text-foreground placeholder:text-muted-foreground px-5 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             />
+            <button
+              type="button"
+              onClick={() => {
+                if (!isListening) {
+                  listen((text) => setInput(text));
+                }
+              }}
+              disabled={isPending}
+              className={clsx(
+                "p-3 rounded-xl transition-all shadow-sm flex items-center justify-center shrink-0",
+                isListening 
+                  ? "bg-red-100 text-red-500 animate-pulse border border-red-200" 
+                  : "bg-white border border-border text-foreground hover:bg-gray-50"
+              )}
+              title="Click to speak"
+            >
+              <Mic className="w-5 h-5" />
+            </button>
             <button
               type="submit"
               disabled={!input.trim() || isPending}

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Home, List, MessageSquareText } from "lucide-react";
+import { Home, List, MessageSquareText, FileText } from "lucide-react";
 import { clsx } from "clsx";
 
 export function Navigation() {
@@ -8,6 +8,8 @@ export function Navigation() {
   const navItems = [
     { href: "/", icon: MessageSquareText, label: "Chat Bot" },
     { href: "/schemes", icon: List, label: "All Schemes" },
+    { href: "/dashboard", icon: FileText, label: "Digital Locker" },
+    { href: "/admin", icon: Home, label: "Admin" },
   ];
 
   return (

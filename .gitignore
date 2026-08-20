@@ -1,6 +1,17 @@
 node_modules
 dist
+build
 .DS_Store
 server/public
 vite.config.ts.*
 *.tar.gz
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+.vite/
+.cache/
+coverage/
+drop_old.ts

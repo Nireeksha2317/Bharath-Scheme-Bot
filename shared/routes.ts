@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { insertSchemeSchema, schemes, insertChatLogSchema } from './schema';
+import { insertSchemeSchema, schemes } from './schema';
 
 export const errorSchemas = {
   validation: z.object({
@@ -24,6 +24,7 @@ export const api = {
         state: z.string().optional(),
         search: z.string().optional(),
         source: z.string().optional(),
+        deviceId: z.string().optional(),
       }).optional(),
       responses: {
         200: z.array(z.custom<typeof schemes.$inferSelect>()),
@@ -38,6 +39,110 @@ export const api = {
       },
     },
   },
+  profile: {
+    get: {
+      method: 'GET' as const,
+      path: '/api/profile' as const,
+      input: z.object({
+        deviceId: z.string(),
+      }).optional(),
+      responses: {
+        200: z.custom<typeof import('./schema').userProfiles.$inferSelect>(),
+        404: errorSchemas.notFound,
+      }
+    },
+    update: {
+      method: 'POST' as const,
+      path: '/api/profile' as const,
+      input: z.object({
+        deviceId: z.string(),
+        profile: z.record(z.any()), // We will properly type this in the server
+      }),
+      responses: {
+        200: z.custom<typeof import('./schema').userProfiles.$inferSelect>(),
+        400: errorSchemas.validation,
+      }
+    }
+  },
+  savedSchemes: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/saved-schemes' as const,
+      input: z.object({
+        deviceId: z.string(),
+      }).optional(),
+      responses: {
+        200: z.array(z.object({
+          saved: z.custom<typeof import('./schema').savedSchemes.$inferSelect>(),
+          scheme: z.custom<typeof import('./schema').schemes.$inferSelect>()
+        })),
+        404: errorSchemas.notFound,
+      }
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/saved-schemes' as const,
+      input: z.object({
+        deviceId: z.string(),
+        schemeId: z.number(),
+      }),
+      responses: {
+        200: z.custom<typeof import('./schema').savedSchemes.$inferSelect>(),
+        400: errorSchemas.validation,
+      }
+    },
+    remove: {
+      method: 'DELETE' as const,
+      path: '/api/saved-schemes/:schemeId' as const,
+      input: z.object({
+        deviceId: z.string(),
+      }).optional(),
+      responses: {
+        200: z.object({ success: z.boolean() }),
+        404: errorSchemas.notFound,
+      }
+    }
+  },
+  applications: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/applications' as const,
+      input: z.object({
+        deviceId: z.string(),
+      }).optional(),
+      responses: {
+        200: z.array(z.object({
+          app: z.custom<typeof import('./schema').applications.$inferSelect>(),
+          scheme: z.custom<typeof import('./schema').schemes.$inferSelect>()
+        })),
+        404: errorSchemas.notFound,
+      }
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/applications' as const,
+      input: z.object({
+        deviceId: z.string(),
+        schemeId: z.number(),
+      }),
+      responses: {
+        200: z.custom<typeof import('./schema').applications.$inferSelect>(),
+        400: errorSchemas.validation,
+      }
+    },
+    updateStatus: {
+      method: 'PATCH' as const,
+      path: '/api/applications/:id' as const,
+      input: z.object({
+        deviceId: z.string(),
+        status: z.string(),
+      }),
+      responses: {
+        200: z.custom<typeof import('./schema').applications.$inferSelect>(),
+        400: errorSchemas.validation,
+      }
+    }
+  },
   chat: {
     send: {
       method: 'POST' as const,
@@ -45,6 +150,7 @@ export const api = {
       input: z.object({
         message: z.string(),
         language: z.string().default('en'),
+        deviceId: z.string().optional(),
       }),
       responses: {
         200: z.object({
